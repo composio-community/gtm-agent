@@ -77,7 +77,9 @@ create `.env` in the project root:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 SUPABASE_SECRET_KEY=sb_secret_...
-OPENAI_API_KEY=sk-...
+GOOGLE_GENERATIVE_AI_API_KEY=... # preferred if set (Gemini)
+ANTHROPIC_API_KEY=...            # fallback if Google key missing
+OPENAI_API_KEY=sk-...            # fallback if both above missing
 COMPOSIO_API_KEY=...           # optional if using MCP OAuth
 CRON_SECRET=any-random-string  # for the scheduled task dispatcher
 ```
@@ -143,7 +145,7 @@ you can run both at the same time too, and if a user has connected via MCP OAuth
 | auth | Supabase Auth (email/password, cookie sessions) |
 | database | Supabase Postgres, RLS, Realtime |
 | AI | Vercel AI SDK v6 (streamText, generateText) |
-| model | configurable in `lib/agent/harness.ts` |
+| model | auto-selects Gemini → Anthropic → OpenAI based on available API key (configurable in `lib/agent/harness.ts`) |
 | tools | Composio MCP (`@ai-sdk/mcp`) or Platform SDK (`@composio/core`) |
 | deploy | Vercel (serverless, `after()` for background work) |
 

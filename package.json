@@ -20,6 +20,7 @@
   "homepage": "https://github.com/composio-community/gtm-agent#readme",
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.69",
+    "@ai-sdk/google": "^2.0.70",
     "@ai-sdk/mcp": "^1.0.36",
     "@ai-sdk/openai": "^3.0.52",
     "@ai-sdk/react": "^3.0.161",
