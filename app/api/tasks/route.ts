@@ -50,6 +50,7 @@ export async function POST(req: Request) {
   }
 
   const task = await createTask({
+    userId: user.id,
     title: body.title,
     description: body.description,
     scheduledFor: recurrence || hasFutureTime ? scheduledFor : null,

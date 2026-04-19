@@ -75,6 +75,7 @@ export async function getTask(id: string): Promise<Task | undefined> {
 }
 
 export async function createTask(input: {
+  userId: string
   title: string
   description?: string
   scheduledFor?: string | null
@@ -88,6 +89,7 @@ export async function createTask(input: {
   const { data, error } = await supabase
     .from(TABLE)
     .insert({
+      user_id: input.userId,
       title: input.title,
       description: input.description ?? null,
       status: "todo",
