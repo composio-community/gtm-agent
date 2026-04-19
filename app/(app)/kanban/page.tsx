@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useState, useTransition, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useState, useTransition, useSyncExternalStore } from "react"
 import type { Task, TaskStatus } from "@/lib/tasks"
 import type { Recurrence } from "@/lib/schedule"
 import { humanize } from "@/lib/schedule"
@@ -77,6 +77,24 @@ export default function KanbanPage() {
   const [weeklyDow, setWeeklyDow] = useState(1) // Monday
   const [hourlyMinute, setHourlyMinute] = useState(0)
   const [creating, startCreate] = useTransition()
+  const [errorToast, setErrorToast] = useState<{ id: string; title: string; message: string } | null>(null)
+  const [seenErrors, setSeenErrors] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const nextError = tasks.find((t) => t.status === "error" && !seenErrors.has(t.id))
+    if (!nextError) return
+
+    const firstAssistant = nextError.messages.find(
+      (m) => m.role === "assistant" && typeof m.content === "string" && m.content.includes("**Error:**"),
+    )
+    const message =
+      typeof firstAssistant?.content === "string"
+        ? firstAssistant.content.replace("**Error:**", "").trim()
+        : "Task failed. Open the task to inspect details."
+
+    setErrorToast({ id: nextError.id, title: nextError.title, message })
+    setSeenErrors((prev) => new Set(prev).add(nextError.id))
+  }, [tasks, seenErrors])
 
   const create = useCallback(() => {
     if (!title.trim()) return
@@ -139,6 +157,35 @@ export default function KanbanPage() {
 
   return (
     <div className="container">
+      {errorToast && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            zIndex: 2000,
+            maxWidth: 420,
+            background: "var(--panel)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            padding: 12,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <strong style={{ flex: 1 }}>Task failed: {errorToast.title}</strong>
+            <button onClick={() => setErrorToast(null)}>Dismiss</button>
+          </div>
+          <p style={{ marginTop: 8, color: "var(--muted)" }}>{errorToast.message}</p>
+          <div style={{ marginTop: 8 }}>
+            <Link href={`/kanban/${errorToast.id}`}>
+              <button>Open task</button>
+            </Link>
+          </div>
+        </div>
+      )}
+
       <div className="board-header">
         <form
           className="new-task"

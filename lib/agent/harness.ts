@@ -8,10 +8,13 @@ import {
 } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { anthropic } from "@ai-sdk/anthropic"
+import { google } from "@ai-sdk/google"
 import { z } from "zod"
 import { getAdmin } from "@/lib/supabase/admin"
 
-const MODEL = "claude-opus-4-7" // "gpt-5.4"
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-7"
+const GOOGLE_MODEL = process.env.GOOGLE_MODEL ?? "gemini-2.0-flash"
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini"
 const SYSTEM = `You are a GTM (go-to-market) assistant working on a single task in a persistent thread.
 Use the available tools to research leads, draft outreach, and complete the task.
 
@@ -21,6 +24,15 @@ Rules:
 - When the task is complete, call the \`mark_done\` tool with a short title and summary. This closes the task and notifies the user.`
 
 type RunArgs = { taskId: string; userId: string }
+
+function resolveModel() {
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) return google(GOOGLE_MODEL)
+  if (process.env.ANTHROPIC_API_KEY) return anthropic(ANTHROPIC_MODEL)
+  if (process.env.OPENAI_API_KEY) return openai(OPENAI_MODEL)
+  throw new Error(
+    "No model API key configured. Set GOOGLE_GENERATIVE_AI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.",
+  )
+}
 
 async function resolveEmail(userId: string): Promise<string> {
   const admin = getAdmin()
@@ -79,7 +91,7 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
     let generated: ModelMessage[] = []
 
     const result = streamText({
-      model: anthropic(MODEL),
+      model: resolveModel(),
       system: SYSTEM,
       messages: priorMessages,
       tools,
@@ -111,6 +123,12 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
       .eq("user_id", userId)
   } catch (e: any) {
     const errMsg = e?.message ?? String(e)
+    console.error("[runAgentConversation] task failed", {
+      taskId,
+      userId,
+      error: errMsg,
+      stack: e?.stack,
+    })
     // Write the error into the chat so the user sees it.
     const currentMessages = priorMessages ?? []
     const errorMessage: ModelMessage = {
