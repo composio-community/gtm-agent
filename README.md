@@ -80,6 +80,7 @@ SUPABASE_SECRET_KEY=sb_secret_...
 GOOGLE_GENERATIVE_AI_API_KEY=... # preferred if set (Gemini)
 ANTHROPIC_API_KEY=...            # fallback if Google key missing
 OPENAI_API_KEY=sk-...            # fallback if both above missing
+GOOGLE_MODEL=gemini-3.1-pro-preview  # optional override
 COMPOSIO_API_KEY=...           # optional if using MCP OAuth
 CRON_SECRET=any-random-string  # for the scheduled task dispatcher
 ```
