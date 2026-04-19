@@ -58,7 +58,16 @@ export async function POST(req: Request) {
   })
 
   if (runImmediately) {
-    after(() => runAgentConversation({ taskId: task.id, userId: user.id }))
+    after(async () => {
+      await runAgentConversation({ taskId: task.id, userId: user.id }).catch((err) => {
+        console.error("[POST /api/tasks] background run failed", {
+          taskId: task.id,
+          userId: user.id,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        })
+      })
+    })
   }
 
   return NextResponse.json(task, { status: 201 })

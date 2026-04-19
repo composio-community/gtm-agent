@@ -48,8 +48,13 @@ async function createPlatformTools(userEmail: string) {
     apiKey,
     provider: new VercelProvider(),
   })
-  const session = await composio.create(userEmail)
-  return await session.tools()
+  try {
+    const session = await composio.create(userEmail)
+    return await session.tools()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`Composio Platform SDK failed: ${msg}`)
+  }
 }
 
 export async function createTools(userId: string, userEmail: string) {
