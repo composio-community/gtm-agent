@@ -123,6 +123,12 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
       .eq("user_id", userId)
   } catch (e: any) {
     const errMsg = e?.message ?? String(e)
+    console.error("[runAgentConversation] task failed", {
+      taskId,
+      userId,
+      error: errMsg,
+      stack: e?.stack,
+    })
     // Write the error into the chat so the user sees it.
     const currentMessages = priorMessages ?? []
     const errorMessage: ModelMessage = {

@@ -3,6 +3,13 @@ import { getAdmin } from "@/lib/supabase/admin"
 
 const MCP_URL = process.env.COMPOSIO_MCP_URL ?? "https://connect.composio.dev/mcp"
 
+function getComposioApiKey(): string | null {
+  const raw = process.env.COMPOSIO_API_KEY
+  if (!raw) return null
+  const trimmed = raw.trim().replace(/^['"]|['"]$/g, "")
+  return trimmed.length > 0 ? trimmed : null
+}
+
 async function getUserMCPToken(userId: string): Promise<string | null> {
   const admin = getAdmin()
   const { data } = await admin
@@ -33,8 +40,12 @@ function isMCPAuthError(err: unknown): boolean {
 async function createPlatformTools(userEmail: string) {
   const { Composio } = await import("@composio/core")
   const { VercelProvider } = await import("@composio/vercel")
+  const apiKey = getComposioApiKey()
+  if (!apiKey) {
+    throw new Error("COMPOSIO_API_KEY is empty or invalid. Set a valid key in environment variables.")
+  }
   const composio = new Composio({
-    apiKey: process.env.COMPOSIO_API_KEY,
+    apiKey,
     provider: new VercelProvider(),
   })
   const session = await composio.create(userEmail)
@@ -49,7 +60,7 @@ export async function createTools(userId: string, userEmail: string) {
       return await createMCPTools(mcpToken)
     } catch (err) {
       // If MCP auth is stale/invalid, gracefully fall back to the shared platform key.
-      if (process.env.COMPOSIO_API_KEY && isMCPAuthError(err)) {
+      if (getComposioApiKey() && isMCPAuthError(err)) {
         return await createPlatformTools(userEmail)
       }
       throw err
@@ -57,7 +68,7 @@ export async function createTools(userId: string, userEmail: string) {
   }
 
   // Fallback: shared COMPOSIO_API_KEY via the platform SDK, keyed by email.
-  if (process.env.COMPOSIO_API_KEY) {
+  if (getComposioApiKey()) {
     return await createPlatformTools(userEmail)
   }
 

@@ -84,6 +84,8 @@ COMPOSIO_API_KEY=...           # optional if using MCP OAuth
 CRON_SECRET=any-random-string  # for the scheduled task dispatcher
 ```
 
+> **tip:** set API keys as raw values (no surrounding quotes).
+
 **4. run**
 
 ```
