@@ -126,7 +126,7 @@ Two paths, same tools:
 
 **Platform SDK (shared key)** — set `COMPOSIO_API_KEY` in env, and the agent creates a Composio session keyed by the user's email. Simpler setup, shared rate limits.
 
-MCP takes priority when both exist.
+MCP takes priority when both exist. If a saved MCP token is stale and returns an auth error, the agent falls back to the shared Platform SDK key (when `COMPOSIO_API_KEY` is set).
 
 ## Using It For Yourself vs. Your Users
 
