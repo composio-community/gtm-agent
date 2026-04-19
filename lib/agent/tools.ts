@@ -25,6 +25,11 @@ async function createMCPTools(token: string) {
   return await client.tools()
 }
 
+function isMCPAuthError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes("HTTP 401") || msg.includes("Missing authentication")
+}
+
 async function createPlatformTools(userEmail: string) {
   const { Composio } = await import("@composio/core")
   const { VercelProvider } = await import("@composio/vercel")
@@ -38,9 +43,17 @@ async function createPlatformTools(userEmail: string) {
 
 export async function createTools(userId: string, userEmail: string) {
   // Per-user MCP token (from OAuth flow) takes priority.
-  const mcpToken = await getUserMCPToken(userId).catch(() => null)
+  const mcpToken = (await getUserMCPToken(userId).catch(() => null))?.trim() ?? null
   if (mcpToken) {
-    return await createMCPTools(mcpToken)
+    try {
+      return await createMCPTools(mcpToken)
+    } catch (err) {
+      // If MCP auth is stale/invalid, gracefully fall back to the shared platform key.
+      if (process.env.COMPOSIO_API_KEY && isMCPAuthError(err)) {
+        return await createPlatformTools(userEmail)
+      }
+      throw err
+    }
   }
 
   // Fallback: shared COMPOSIO_API_KEY via the platform SDK, keyed by email.
