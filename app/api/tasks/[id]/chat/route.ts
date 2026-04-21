@@ -20,7 +20,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "text required" }, { status: 400 })
   }
 
-  after(() => appendUserMessageAndRun({ taskId: id, userId: user.id, text }))
+  after(async () => {
+    await appendUserMessageAndRun({ taskId: id, userId: user.id, text }).catch((err) => {
+      console.error("[POST /api/tasks/:id/chat] background run failed", {
+        taskId: id,
+        userId: user.id,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      })
+    })
+  })
 
   return NextResponse.json({ ok: true }, { status: 202 })
 }

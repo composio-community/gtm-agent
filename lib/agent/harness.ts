@@ -8,10 +8,13 @@ import {
 } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { anthropic } from "@ai-sdk/anthropic"
+import { google } from "@ai-sdk/google"
 import { z } from "zod"
 import { getAdmin } from "@/lib/supabase/admin"
 
-const MODEL = "claude-opus-4-7" // "gpt-5.4"
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-7"
+const GOOGLE_MODEL = process.env.GOOGLE_MODEL ?? "gemini-3.1-pro-preview"
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini"
 const SYSTEM = `You are a GTM (go-to-market) assistant working on a single task in a persistent thread.
 Use the available tools to research leads, draft outreach, and complete the task.
 
@@ -21,6 +24,36 @@ Rules:
 - When the task is complete, call the \`mark_done\` tool with a short title and summary. This closes the task and notifies the user.`
 
 type RunArgs = { taskId: string; userId: string }
+
+type Candidate = { provider: "google" | "anthropic" | "openai"; modelName: string; model: any }
+
+function resolveModelCandidates(): Candidate[] {
+  const candidates: Candidate[] = []
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    candidates.push({ provider: "google", modelName: GOOGLE_MODEL, model: google(GOOGLE_MODEL) })
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    candidates.push({ provider: "anthropic", modelName: ANTHROPIC_MODEL, model: anthropic(ANTHROPIC_MODEL) })
+  }
+  if (process.env.OPENAI_API_KEY) {
+    candidates.push({ provider: "openai", modelName: OPENAI_MODEL, model: openai(OPENAI_MODEL) })
+  }
+  if (candidates.length === 0) {
+    throw new Error(
+      "No model API key configured. Set GOOGLE_GENERATIVE_AI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.",
+    )
+  }
+  return candidates
+}
+
+function extractErrorMessage(err: unknown): string {
+  if (!err) return "Unknown error"
+  if (err instanceof Error) {
+    const body = (err as any).responseBody
+    return body ? `${err.message} | ${body}` : err.message
+  }
+  return String(err)
+}
 
 async function resolveEmail(userId: string): Promise<string> {
   const admin = getAdmin()
@@ -76,29 +109,53 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
     const composioTools = await createTools(userId, userEmail)
     const tools = { ...composioTools, mark_done: markDoneTool }
 
-    let generated: ModelMessage[] = []
+    const candidates = resolveModelCandidates()
+    const attemptErrors: string[] = []
+    let finalGenerated: ModelMessage[] | null = null
 
-    const result = streamText({
-      model: anthropic(MODEL),
-      system: SYSTEM,
-      messages: priorMessages,
-      tools,
-      stopWhen: stepCountIs(40),
-      onStepFinish: async ({ response }) => {
-        generated = [...generated, ...response.messages]
-        // Push intermediate progress so Realtime updates the client live.
-        await admin
-          .from("tasks")
-          .update({ messages: [...priorMessages, ...generated] })
-          .eq("id", taskId)
-          .eq("user_id", userId)
-      },
-    })
+    for (const c of candidates) {
+      let generated: ModelMessage[] = []
+      try {
+        const result = streamText({
+          model: c.model,
+          system: SYSTEM,
+          messages: priorMessages,
+          tools,
+          stopWhen: stepCountIs(40),
+          onStepFinish: async ({ response }) => {
+            generated = [...generated, ...response.messages]
+            // Push intermediate progress so Realtime updates the client live.
+            await admin
+              .from("tasks")
+              .update({ messages: [...priorMessages, ...generated] })
+              .eq("id", taskId)
+              .eq("user_id", userId)
+          },
+        })
 
-    await result.consumeStream()
+        await result.consumeStream()
+        finalGenerated = (await result.response).messages
+        break
+      } catch (err) {
+        const detail = extractErrorMessage(err)
+        attemptErrors.push(`${c.provider}:${c.modelName} -> ${detail}`)
+        console.warn("[runAgentConversation] model attempt failed", {
+          taskId,
+          userId,
+          provider: c.provider,
+          model: c.modelName,
+          error: detail,
+        })
+      }
+    }
+
+    if (!finalGenerated) {
+      throw new Error(
+        `All configured models failed. Attempts: ${attemptErrors.join(" || ")}`,
+      )
+    }
 
     // Final authoritative write — corrects any duplication from intermediate writes.
-    const finalGenerated = (await result.response).messages
     const final = [...priorMessages, ...finalGenerated]
 
     await admin
@@ -111,6 +168,12 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
       .eq("user_id", userId)
   } catch (e: any) {
     const errMsg = e?.message ?? String(e)
+    console.error("[runAgentConversation] task failed", {
+      taskId,
+      userId,
+      error: errMsg,
+      stack: e?.stack,
+    })
     // Write the error into the chat so the user sees it.
     const currentMessages = priorMessages ?? []
     const errorMessage: ModelMessage = {
