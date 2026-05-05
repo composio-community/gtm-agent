@@ -23,17 +23,43 @@ type Store = {
   getSnapshot: () => Snapshot
   initial: Snapshot
   pushLocalUser: (text: string) => void
+  refreshFromServer: () => void
 }
 
 function makeStore(initial: Task, client: SupabaseClient): Store {
   let snapshot: Snapshot = { messages: initial.messages, status: initial.status }
   const listeners = new Set<() => void>()
   let channel: RealtimeChannel | null = null
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+  /** Last server `updated_at` we merged — Realtime often omits TOASTed `messages`, so we poll too. */
+  let lastMergedServerUpdatedAt = initial.updatedAt
 
   const channelName = `task-${initial.id}-${Math.random().toString(36).slice(2, 10)}`
 
   function emit() {
     for (const l of listeners) l()
+  }
+
+  function applyServerTask(task: Task) {
+    const sl = task.messages?.length ?? 0
+    const newerByTime = task.updatedAt > lastMergedServerUpdatedAt
+    const newerByLen = sl > snapshot.messages.length
+    if (!newerByTime && !newerByLen) return
+    lastMergedServerUpdatedAt = task.updatedAt
+    snapshot = { messages: task.messages ?? [], status: task.status }
+    emit()
+  }
+
+  async function pollServer() {
+    if (typeof document !== "undefined" && document.hidden) return
+    try {
+      const res = await fetch(`/api/tasks/${initial.id}`, { cache: "no-store" })
+      if (!res.ok) return
+      const task = (await res.json()) as Task
+      applyServerTask(task)
+    } catch {
+      // ignore transient network errors
+    }
   }
 
   function start() {
@@ -62,9 +88,18 @@ function makeStore(initial: Task, client: SupabaseClient): Store {
         },
       )
       .subscribe()
+
+    if (!pollTimer) {
+      void pollServer()
+      pollTimer = setInterval(() => void pollServer(), 1500)
+    }
   }
 
   function stop() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
     if (channel) {
       void client.removeChannel(channel)
       channel = null
@@ -92,6 +127,9 @@ function makeStore(initial: Task, client: SupabaseClient): Store {
         status: "in_progress",
       }
       emit()
+    },
+    refreshFromServer() {
+      void pollServer()
     },
   }
 }
@@ -143,7 +181,11 @@ export function TaskChat({ initialTask, supabaseUrl, supabaseKey }: Props) {
   )
 
   const storeRef = useRef<Store | null>(null)
-  if (!storeRef.current || typeof storeRef.current.pushLocalUser !== "function") {
+  if (
+    !storeRef.current ||
+    typeof storeRef.current.pushLocalUser !== "function" ||
+    typeof storeRef.current.refreshFromServer !== "function"
+  ) {
     storeRef.current = makeStore(initialTask, client)
   }
   const store = storeRef.current
@@ -162,11 +204,12 @@ export function TaskChat({ initialTask, supabaseUrl, supabaseKey }: Props) {
       store.pushLocalUser(text)
       setInput("")
       try {
-        await fetch(`/api/tasks/${initialTask.id}/chat`, {
+        const res = await fetch(`/api/tasks/${initialTask.id}/chat`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ text }),
         })
+        if (res.ok) store.refreshFromServer()
       } finally {
         setSending(false)
       }

@@ -614,6 +614,78 @@ h2 { font-size: 15px; margin: 0 0 12px; font-weight: 400; letter-spacing: 0.3px;
   border-color: var(--border);
 }
 
+.agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px 3px 4px;
+  margin: 0 0 8px;
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.agents-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.avatar-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.avatar-pick {
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  display: inline-flex;
+  line-height: 0;
+  transition: border-color 120ms ease, transform 70ms ease;
+}
+.avatar-pick:hover {
+  transform: none;
+  border-color: var(--border-strong);
+}
+.avatar-pick.selected {
+  border-color: var(--text);
+}
+.avatar-pick:active { transform: none; box-shadow: none; }
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.agent-card pre { max-height: 140px; }
+
+.task-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.task-agent .avatar { font-size: 18px; }
+
 .inbox-list {
   margin-top: 16px;
   flex: 1;

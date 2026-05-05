@@ -12,13 +12,21 @@ import { z } from "zod"
 import { getAdmin } from "@/lib/supabase/admin"
 
 const MODEL = "claude-opus-4-7" // "gpt-5.4"
-const SYSTEM = `You are a GTM (go-to-market) assistant working on a single task in a persistent thread.
-Use the available tools to research leads, draft outreach, and complete the task.
+const DEFAULT_SYSTEM = `You are a GTM (go-to-market) assistant working on a single task in a persistent thread.
+Use the available tools to research leads, draft outreach, and complete the task.`
 
-Rules:
+const SYSTEM_RULES = `Rules:
 - Format ALL responses in Markdown: use headings, bullet lists, bold, links, tables, code blocks as appropriate.
 - Be direct. Do the work — don't ask "would you like me to…" or offer menus of options. Just execute the task fully.
 - When the task is complete, call the \`mark_done\` tool with a short title and summary. This closes the task and notifies the user.`
+
+function buildSystem(agentPrompt: string | null, agentName: string | null): string {
+  const persona = agentPrompt?.trim()
+  const base = persona
+    ? `You are ${agentName ?? "an agent"}.\n\n${persona}`
+    : DEFAULT_SYSTEM
+  return `${base}\n\n${SYSTEM_RULES}`
+}
 
 type RunArgs = { taskId: string; userId: string }
 
@@ -33,7 +41,7 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
 
   const { data: task, error: loadErr } = await admin
     .from("tasks")
-    .select("id, title, messages, status, user_id")
+    .select("id, title, messages, status, user_id, agent_id")
     .eq("id", taskId)
     .eq("user_id", userId)
     .maybeSingle()
@@ -41,6 +49,22 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
 
   const userEmail = await resolveEmail(userId)
   const priorMessages = (task.messages as ModelMessage[] | null) ?? []
+
+  let agentName: string | null = null
+  let agentPrompt: string | null = null
+  if (task.agent_id) {
+    const { data: agentRow } = await admin
+      .from("agents")
+      .select("name, system_prompt")
+      .eq("id", task.agent_id)
+      .eq("user_id", userId)
+      .maybeSingle()
+    if (agentRow) {
+      agentName = agentRow.name as string
+      agentPrompt = agentRow.system_prompt as string
+    }
+  }
+  const system = buildSystem(agentPrompt, agentName)
 
   await admin
     .from("tasks")
@@ -80,7 +104,7 @@ export async function runAgentConversation({ taskId, userId }: RunArgs): Promise
 
     const result = streamText({
       model: anthropic(MODEL),
-      system: SYSTEM,
+      system,
       messages: priorMessages,
       tools,
       stopWhen: stepCountIs(40),

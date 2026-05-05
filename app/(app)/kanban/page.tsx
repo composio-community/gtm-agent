@@ -3,8 +3,10 @@
 import Link from "next/link"
 import { useCallback, useState, useTransition, useSyncExternalStore } from "react"
 import type { Task, TaskStatus } from "@/lib/tasks"
+import type { Agent } from "@/lib/agents"
 import type { Recurrence } from "@/lib/schedule"
 import { humanize } from "@/lib/schedule"
+import { AgentAvatar } from "@/components/agent-avatar"
 
 type Store = {
   tasks: Task[]
@@ -14,6 +16,38 @@ type Store = {
 }
 
 const store: Store = { tasks: [], listeners: new Set(), loaded: false, pollTimer: null }
+
+type AgentStore = {
+  agents: Agent[]
+  listeners: Set<() => void>
+  loaded: boolean
+}
+const agentStore: AgentStore = { agents: [], listeners: new Set(), loaded: false }
+
+async function refreshAgents() {
+  const res = await fetch("/api/agents", { cache: "no-store" })
+  if (!res.ok) return
+  agentStore.agents = await res.json()
+  agentStore.loaded = true
+  for (const l of agentStore.listeners) l()
+}
+
+function subscribeAgents(cb: () => void) {
+  agentStore.listeners.add(cb)
+  if (!agentStore.loaded) void refreshAgents()
+  return () => {
+    agentStore.listeners.delete(cb)
+  }
+}
+
+function getAgentsSnapshot() {
+  return agentStore.agents
+}
+
+const EMPTY_AGENTS: Agent[] = []
+function getAgentsServerSnapshot(): Agent[] {
+  return EMPTY_AGENTS
+}
 
 function notify() {
   for (const l of store.listeners) l()
@@ -67,6 +101,15 @@ const COLUMNS: { key: TaskStatus; label: string }[] = [
   { key: "error", label: "Error" },
 ]
 
+/** Prefer embedded `task.agent`; if missing, resolve from the agents list (same RLS/session as /api/agents). */
+function taskDisplayAgent(task: Task, agentsList: Agent[]): Task["agent"] {
+  if (task.agent) return task.agent
+  if (!task.agentId) return null
+  const a = agentsList.find((x) => x.id === task.agentId)
+  if (!a) return null
+  return { id: a.id, name: a.name, avatar: a.avatar }
+}
+
 export default function KanbanPage() {
   const tasks = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
   const [title, setTitle] = useState("")
@@ -76,6 +119,8 @@ export default function KanbanPage() {
   const [timeOfDay, setTimeOfDay] = useState("09:00")
   const [weeklyDow, setWeeklyDow] = useState(1) // Monday
   const [hourlyMinute, setHourlyMinute] = useState(0)
+  const [agentId, setAgentId] = useState<string>("")
+  const agents = useSyncExternalStore(subscribeAgents, getAgentsSnapshot, getAgentsServerSnapshot)
   const [creating, startCreate] = useTransition()
 
   const create = useCallback(() => {
@@ -117,7 +162,13 @@ export default function KanbanPage() {
       await fetch("/api/tasks", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, description, scheduledFor, recurrence }),
+        body: JSON.stringify({
+          title,
+          description,
+          scheduledFor,
+          recurrence,
+          agentId: agentId || null,
+        }),
       })
       setTitle("")
       setDescription("")
@@ -125,7 +176,7 @@ export default function KanbanPage() {
       setOnceAt("")
       await refresh()
     })
-  }, [title, description, scheduleMode, onceAt, timeOfDay, weeklyDow, hourlyMinute])
+  }, [title, description, scheduleMode, onceAt, timeOfDay, weeklyDow, hourlyMinute, agentId])
 
   const remove = useCallback(
     async (id: string, e: React.MouseEvent) => {
@@ -160,6 +211,14 @@ export default function KanbanPage() {
             />
           </div>
           <div className="new-task-row">
+            <select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+              <option value="">Default agent</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
             <select
               value={scheduleMode}
               onChange={(e) => setScheduleMode(e.target.value as typeof scheduleMode)}
@@ -234,10 +293,23 @@ export default function KanbanPage() {
                 <span>{items.length}</span>
               </h3>
               <div className="column-scroll">
-                {items.map((t) => (
+                {items.map((t) => {
+                  const agent = taskDisplayAgent(t, agents)
+                  return (
                   <Link href={`/kanban/${t.id}`} key={t.id} className="card-link">
                     <div className="card">
                       <h4>{t.title}</h4>
+                      {agent && (
+                        <div className="agent-chip">
+                          <AgentAvatar
+                            id={agent.id}
+                            name={agent.name}
+                            avatar={agent.avatar}
+                            size={18}
+                          />
+                          {agent.name}
+                        </div>
+                      )}
                       {t.description && <p>{t.description}</p>}
                       {t.scheduledFor && (
                         <div className={`scheduled-chip${t.recurrence ? " recurring" : ""}`}>
@@ -252,7 +324,8 @@ export default function KanbanPage() {
                       </div>
                     </div>
                   </Link>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )

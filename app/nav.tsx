@@ -12,6 +12,7 @@ export function Nav({ email, unread = 0 }: { email?: string; unread?: number }) 
       <Link href="/kanban" className="brand">GTM Agent</Link>
       <div className="links">
         <Link href="/kanban" className={is("/kanban") ? "active" : ""}>Kanban</Link>
+        <Link href="/agents" className={is("/agents") ? "active" : ""}>Agents</Link>
         <Link href="/inbox" className={is("/inbox") ? "active" : ""}>
           Inbox
           {unread > 0 && <span className="badge">{unread}</span>}

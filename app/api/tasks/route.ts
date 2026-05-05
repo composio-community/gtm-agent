@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     if (!Number.isNaN(d.getTime())) scheduledFor = d.toISOString()
   }
   const recurrence = isRecurrence(body.recurrence) ? body.recurrence : null
+  const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : null
 
   // Templates (recurring) require a scheduled_for to know when to first fire.
   // One-off runs immediately if scheduled_for is empty or in the past.
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
     description: body.description,
     scheduledFor: recurrence || hasFutureTime ? scheduledFor : null,
     recurrence,
+    agentId,
   })
 
   if (runImmediately) {

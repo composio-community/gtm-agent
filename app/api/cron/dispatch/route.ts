@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server"
 import { getAdmin } from "@/lib/supabase/admin"
 import { runAgentConversation } from "@/lib/agent/harness"
+import { resolveAgentIdForTask } from "@/lib/tasks"
 import { nextRunTime, type Recurrence } from "@/lib/schedule"
 
 export const runtime = "nodejs"
@@ -14,6 +15,7 @@ type DueRow = {
   description: string | null
   scheduled_for: string
   recurrence: Recurrence | null
+  agent_id: string | null
 }
 
 function isAuthorized(req: Request): boolean {
@@ -27,7 +29,7 @@ async function dispatch() {
   const admin = getAdmin()
   const { data, error } = await admin
     .from("tasks")
-    .select("id, user_id, title, description, scheduled_for, recurrence")
+    .select("id, user_id, title, description, scheduled_for, recurrence, agent_id")
     .eq("status", "todo")
     .not("scheduled_for", "is", null)
     .lte("scheduled_for", new Date().toISOString())
@@ -43,6 +45,7 @@ async function dispatch() {
     if (t.recurrence) {
       // Recurring template: clone into a child task, run it, advance template.
       const seedText = t.description ? `${t.title}\n\n${t.description}` : t.title
+      const childAgentId = await resolveAgentIdForTask(admin, t.agent_id)
       const { data: childRow, error: cloneErr } = await admin
         .from("tasks")
         .insert({
@@ -52,6 +55,7 @@ async function dispatch() {
           status: "todo",
           messages: [{ role: "user", content: seedText }],
           parent_id: t.id,
+          agent_id: childAgentId,
         })
         .select("id, user_id")
         .single()
